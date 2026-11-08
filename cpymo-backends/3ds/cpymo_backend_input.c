@@ -8,6 +8,10 @@ bool enhanced_3ds_display_mode_touch_ui_enabled(void);
 const extern bool enhanced_3ds_display_mode;
 extern cpymo_engine engine;
 
+/* Defined in main.c. In debug mode the bottom screen shows the CPyMO console
+ * and START must not do anything. */
+extern bool cpymo_3ds_debug_mode;
+
 static bool touch_enabled(void) {
     if (!enhanced_3ds_display_mode_touch_ui_enabled()) {
         if (engine.say.active) return true;
@@ -23,8 +27,9 @@ cpymo_input cpymo_input_snapshot()
 {
     cpymo_input out;
     u32 keys = hidKeysHeld();
-    if (hidKeysDown() & KEY_START) cpymo_engine_exit(&engine);
-    
+    if ((hidKeysDown() & KEY_START) && !cpymo_3ds_debug_mode)
+        cpymo_engine_exit(&engine);
+
     out.ok = (keys & KEY_A) > 0 || (keys & KEY_Y) > 0 || (keys & KEY_ZL) > 0 || (keys & KEY_ZR) > 0;
     out.skip = (keys & KEY_R) > 0;
     out.cancel = (keys & KEY_B) > 0 || (keys & KEY_X) > 0;

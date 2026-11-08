@@ -42,6 +42,17 @@ bool enhanced_3ds_display_mode = false;
 bool drawing_bottom_screen;
 int display_mode = 1; /* bit 0: dialogue on bottom; bit 1: aspect-fit instead of crop-fill. */
 
+/* Debug mode: the CPyMO console owns the bottom screen (hold L while choosing
+ * a game). While it is enabled no bottom screen UI is drawn at all and START
+ * is disabled. libctru has no consoleExit(), so it lasts until the process
+ * ends. */
+bool cpymo_3ds_debug_mode = false;
+
+/* cpymo_engine_free() may only be called while this is true. Some engine init
+ * helpers release the engine themselves when they fail, so the exit path needs
+ * to know whether the engine is still owned by main(). */
+static bool engine_alive = false;
+
 bool enhanced_3ds_display_mode_touch_ui_enabled(void)
 {
 	if (!enhanced_3ds_display_mode) return false;
@@ -94,6 +105,9 @@ static void ensure_save_dir(const char *gamedir)
 
 static void save_screen_mode()
 {
+	/* Never touch the game's display mode file in debug mode: the mode is
+	 * forced there and the user's choice must survive. */
+	if (cpymo_3ds_debug_mode) return;
 	if (engine.assetloader.gamedir == NULL) return;
 	FILE *sav = cpymo_backend_write_save(engine.assetloader.gamedir, "3ds-display-mode.csav");
 
@@ -114,8 +128,15 @@ static void load_screen_mode(const char *gamedir)
 
 		if (fread(&save, sizeof(save), 1, sav) == 1) {
 			if (save & 0x80) display_mode = save & 3;
-			else display_mode = ((save >> 1) & 1) | ((save & 1) << 1);
-			if (display_mode < 0 || display_mode > 3) display_mode = 2;
+			else {
+				/* Old format: bit0 = enhanced (dialogue on the bottom screen),
+				 * bit1 = fill screen. New format: bit0 = enhanced,
+				 * bit1 = aspect-fit (i.e. NOT fill screen). Translate them
+				 * instead of swapping the two bits. */
+				const int old_enhanced = save & 1;
+				const int old_fill = (save >> 1) & 1;
+				display_mode = old_enhanced | (old_fill ? 0 : 2);
+			}
 			enhanced_3ds_display_mode = (display_mode & 1) != 0;
 			fill_screen = (display_mode & 2) == 0;
 		}
@@ -222,6 +243,28 @@ static error_t before_select_game(cpymo_engine *e, const char *gamedir)
 	ensure_save_dir(gamedir);
 
 	load_screen_mode(gamedir);
+
+	/* Hold L while choosing a game to start in debug mode: the bottom screen
+	 * is handed over to the CPyMO console. */
+	if (!cpymo_3ds_debug_mode && (hidKeysHeld() & KEY_L)) {
+		if (screen3) {
+			C3D_RenderTargetDelete(screen3);
+			screen3 = NULL;
+		}
+
+		consoleInit(GFX_BOTTOM, NULL);
+		gfxSetDoubleBuffering(GFX_BOTTOM, false);
+		cpymo_3ds_debug_mode = true;
+		printf("[CPyMO] Debug mode: the CPyMO console owns the bottom screen.\n");
+	}
+
+	if (cpymo_3ds_debug_mode) {
+		display_mode = 0;
+		enhanced_3ds_display_mode = false;
+		fill_screen = false;
+		return CPYMO_ERR_SUCC;
+	}
+
 	enhanced_3ds_display_mode = (display_mode & 1) != 0;
 	fill_screen = (display_mode & 2) == 0;
 
@@ -242,6 +285,7 @@ static error_t return_to_game_selector(cpymo_game_selector_item **selector_items
 
 	save_screen_mode();
 	cpymo_engine_free(&engine);
+	engine_alive = false;
 	cpymo_backend_image_init(400, 240);
 
 	cpymo_game_selector_item *items = load_game_list();
@@ -249,10 +293,17 @@ static error_t return_to_game_selector(cpymo_game_selector_item **selector_items
 	error_t err = cpymo_engine_init_with_game_selector(
 		&engine, 400, 240, 22, 20, 4, &items,
 		&before_select_game, &after_select_game, &last_selected);
-	if (err != CPYMO_ERR_SUCC) {
+
+	if (err == CPYMO_ERR_SUCC) {
+		engine_alive = true;
+	}
+	else {
+		/* On failure the init helper already released the engine; the game list
+		 * is only taken over on success, so it still belongs to us here. */
 		if (items) cpymo_game_selector_item_free_all(items);
 		if (last_selected) free(last_selected);
 	}
+
 	return err;
 }
 
@@ -345,6 +396,7 @@ int main(void) {
 		if (last_select_game) free(last_select_game);
 		cpymo_game_selector_item_free_all(item);
 		cpymo_backend_text_sys_free();
+		if (screen3) C3D_RenderTargetDelete(screen3);
 		C3D_RenderTargetDelete(screen1);
 		C3D_RenderTargetDelete(screen2);
 		C2D_Fini();
@@ -352,6 +404,8 @@ int main(void) {
 		gfxExit();
 		return 0;
 	}
+
+	engine_alive = true;
 
 	const u32 clr = C2D_Color32(0, 0, 0, 0);
 
@@ -400,11 +454,12 @@ int main(void) {
 			prevSlider = slider;
 		}
 
-		if (hidKeysDown() & KEY_SELECT && engine.assetloader.gamedir) {
+		if (hidKeysDown() & KEY_SELECT && engine.assetloader.gamedir && !cpymo_3ds_debug_mode) {
 			redraw = true;
 			display_mode = (display_mode + 1) & 3;
 			enhanced_3ds_display_mode = (display_mode & 1) != 0;
 			fill_screen = (display_mode & 2) == 0;
+			save_screen_mode();
 		}
 
 		if(redraw || true) {
@@ -433,24 +488,28 @@ int main(void) {
 				else cpymo_engine_draw(&engine);
 			}
 
-			C2D_SceneBegin(screen3);
-			C2D_TargetClear(screen3, clr);
-			render_3d_offset = 0;
-			if (selecting) {
-				drawing_bottom_screen = true;
-				cpymo_3ds_ui_draw_launcher(selected);
+			/* The bottom screen is skipped entirely when the CPyMO console owns it
+			 * (debug mode) or when the render target could not be created. */
+			if (screen3) {
+				C2D_SceneBegin(screen3);
+				C2D_TargetClear(screen3, clr);
+				render_3d_offset = 0;
+				if (selecting) {
+					drawing_bottom_screen = true;
+					cpymo_3ds_ui_draw_launcher(selected);
+				}
+				else if ((display_mode & 1) == 0) {
+					drawing_bottom_screen = true;
+					cpymo_3ds_ui_draw_help(320, display_mode);
+				}
+				else {
+					drawing_bottom_screen = true;
+					cpymo_3ds_ui_draw_enhanced_background();
+					cpymo_engine_draw(&engine);
+					cpymo_3ds_ui_draw_enhanced_hints();
+				}
+				drawing_bottom_screen = false;
 			}
-			else if ((display_mode & 1) == 0) {
-				drawing_bottom_screen = true;
-				cpymo_3ds_ui_draw_help(320, display_mode);
-			}
-			else {
-				drawing_bottom_screen = true;
-				cpymo_3ds_ui_draw_enhanced_background();
-				cpymo_engine_draw(&engine);
-				cpymo_3ds_ui_draw_enhanced_hints();
-			}
-			drawing_bottom_screen = false;
 
 			C3D_FrameEnd(0);
 		} else {
@@ -467,7 +526,7 @@ int main(void) {
 	if(screen3) C3D_RenderTargetDelete(screen3);
 	C3D_RenderTargetDelete(screen2);
 	C3D_RenderTargetDelete(screen1);
-	cpymo_engine_free(&engine);
+	if (engine_alive) cpymo_engine_free(&engine);
 
 	extern void cpymo_backend_audio_free();
 	cpymo_backend_audio_free();

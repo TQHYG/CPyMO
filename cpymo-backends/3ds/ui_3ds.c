@@ -3,6 +3,7 @@
 #include <3ds.h>
 #include <citro2d.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -67,8 +68,14 @@ void cpymo_3ds_ui_init(void)
 	ui_text_buf = C2D_TextBufNew(4096);
 	int w = 0, h = 0;
 	unsigned char *pixels = stbi_load("romfs:/night-sky.png", &w, &h, NULL, 3);
-	if (pixels && cpymo_backend_image_load(&night_sky, pixels, w, h, cpymo_backend_image_format_rgb) != CPYMO_ERR_SUCC)
-		night_sky = NULL;
+	if (pixels) {
+		/* cpymo_backend_image_load() takes ownership only when it succeeds. */
+		if (cpymo_backend_image_load(&night_sky, pixels, w, h, cpymo_backend_image_format_rgb)
+				!= CPYMO_ERR_SUCC) {
+			free(pixels);
+			night_sky = NULL;
+		}
+	}
 }
 
 void cpymo_3ds_ui_free(void)
