@@ -214,7 +214,6 @@ error_t cpymo_3ds_settings_save(void)
 		"# fontsize:     0 = follow the game, 12..32 = default font size\n"
 		"# textspeed:    -1 = follow the game, 0..5 = default text speed\n"
 		"# key_*:        undefined|next|auto|save|load|skip|hide|history|menu|settings|restart\n"
-		"#               (ZL mirrors L, ZR mirrors R)\n"
 		"\n"
 		"display_mode=%d\n"
 		"fontsize=%d\n"

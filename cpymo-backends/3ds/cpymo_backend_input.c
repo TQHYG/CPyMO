@@ -35,7 +35,9 @@ static bool using_default_mapping(void)
 
 static void apply_default_mapping(cpymo_input *out, u32 keys)
 {
-    out->ok = (keys & KEY_A) > 0 || (keys & KEY_Y) > 0 || (keys & KEY_ZL) > 0 || (keys & KEY_ZR) > 0;
+    /* ZL/ZR were already folded into L/R above, so they are not listed here:
+     * they always do exactly what L/R do, in menus as well. */
+    out->ok = (keys & KEY_A) > 0 || (keys & KEY_Y) > 0;
     out->skip = (keys & KEY_R) > 0;
     out->cancel = (keys & KEY_B) > 0 || (keys & KEY_X) > 0;
     out->hide_window = (keys & KEY_L) > 0;

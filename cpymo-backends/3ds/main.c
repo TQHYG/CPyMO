@@ -514,7 +514,7 @@ int main(void) {
 			cpymo_3ds_ui_settings_update();
 			redraw = true;
 		}
-		else if (engine.assetloader.gamedir == NULL && engine.ui) {
+		else if (engine.assetloader.gamedir == NULL && engine.ui && !cpymo_3ds_debug_mode) {
 			bool open_settings = (hidKeysDown() & KEY_Y) != 0;
 
 			if (hidKeysDown() & KEY_TOUCH) {
