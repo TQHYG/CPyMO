@@ -19,7 +19,7 @@
 
 - `cpymo-backends/3ds/ui_3ds.c`、`ui_3ds.h`：原生 Citro2D 双屏 UI。
 - `cpymo-backends/3ds/romfs/night-sky.png`：内置 320×240 夜空资源。
-- `main.c`：选择器覆盖绘制、三种显示模式、绘制分派和资源释放。
+- `main.c`：选择器覆盖绘制、四种显示模式、绘制分派和资源释放。
 - 图像后端增加物理像素绘制入口；文字后端共享已加载字体。
 - 游戏选择器保存原始 UTF-8 游戏标题供原生启动器使用。
 
