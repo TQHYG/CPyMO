@@ -383,6 +383,10 @@ static error_t return_to_game_selector(cpymo_game_selector_item **selector_items
 int main(void) {
 	srand((unsigned)time(NULL));
 
+	/* Keep the fs service (and the sdmc devoptab) alive for the whole process:
+	 * settings.txt and the optional background image are read through fopen(). */
+	fsInit();
+
 	/* sdmc:/pymogames/settings.txt - global frontend settings, never part of a
 	 * game save. */
 	cpymo_3ds_settings_load();

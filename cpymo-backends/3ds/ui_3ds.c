@@ -14,7 +14,7 @@ extern void cpymo_3ds_draw_image_raw(cpymo_backend_image image, float x, float y
 extern unsigned char *stbi_load(char const *filename, int *x, int *y, int *channels_in_file, int desired_channels);
 
 static C2D_TextBuf ui_text_buf;
-static cpymo_backend_image night_sky;
+static cpymo_backend_image bottom_background;
 static float ui_layer;
 extern float render_3d_offset;
 extern cpymo_engine engine;
@@ -124,29 +124,64 @@ static void panel_header(int width)
 
 static void night_background(int width, int height)
 {
-	if (night_sky) cpymo_3ds_draw_image_raw(night_sky, ui_x(0), 0, width, height);
+	if (bottom_background) cpymo_3ds_draw_image_raw(bottom_background, ui_x(0), 0, width, height);
 	else panel_background(width, height);
+}
+
+/* sdmc:/pymogames/bg.png, then bg.jpg, then the built-in night sky. A custom
+ * image has to be 4:3 because it is stretched into 320x240 (bottom screen) and
+ * 400x240 (top screen info panel). */
+static cpymo_backend_image load_bottom_background(void)
+{
+	static const char *const candidates[] = {
+		"sdmc:/pymogames/bg.png",
+		"sdmc:/pymogames/bg.jpg",
+		"romfs:/night-sky.png",
+	};
+
+	for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i) {
+		const bool builtin = i == (sizeof(candidates) / sizeof(candidates[0])) - 1;
+		int w = 0, h = 0;
+		unsigned char *pixels = stbi_load(candidates[i], &w, &h, NULL, 3);
+		if (pixels == NULL) {
+			if (!builtin) printf("[CPyMO] %s: not readable, skipped.\n", candidates[i]);
+			continue;
+		}
+
+		/* 4:3 (e.g. 320x240, 640x480) or the top screen size 400x240. */
+		const bool valid_size = (w * 3 == h * 4) || (w == 400 && h == 240);
+		if (!builtin && (w < 160 || h < 120 || !valid_size)) {
+			printf("[CPyMO] %s: %dx%d ignored (need 4:3 or 400x240).\n",
+				candidates[i], w, h);
+			free(pixels);
+			continue;
+		}
+
+		cpymo_backend_image image = NULL;
+		/* cpymo_backend_image_load() takes ownership only when it succeeds. */
+		if (cpymo_backend_image_load(&image, pixels, w, h,
+				cpymo_backend_image_format_rgb) != CPYMO_ERR_SUCC) {
+			free(pixels);
+			continue;
+		}
+
+		printf("[CPyMO] Bottom screen background: %s (%dx%d).\n", candidates[i], w, h);
+		return image;
+	}
+
+	return NULL;
 }
 
 void cpymo_3ds_ui_init(void)
 {
 	ui_text_buf = C2D_TextBufNew(4096);
-	int w = 0, h = 0;
-	unsigned char *pixels = stbi_load("romfs:/night-sky.png", &w, &h, NULL, 3);
-	if (pixels) {
-		/* cpymo_backend_image_load() takes ownership only when it succeeds. */
-		if (cpymo_backend_image_load(&night_sky, pixels, w, h, cpymo_backend_image_format_rgb)
-				!= CPYMO_ERR_SUCC) {
-			free(pixels);
-			night_sky = NULL;
-		}
-	}
+	bottom_background = load_bottom_background();
 }
 
 void cpymo_3ds_ui_free(void)
 {
-	if (night_sky) cpymo_backend_image_free(night_sky);
-	night_sky = NULL;
+	if (bottom_background) cpymo_backend_image_free(bottom_background);
+	bottom_background = NULL;
 	if (ui_text_buf) C2D_TextBufDelete(ui_text_buf);
 	ui_text_buf = NULL;
 }

@@ -70,7 +70,18 @@ C:\dev\devkitPro\msys2\usr\bin\bash.exe -lc 'bash /d/tqhyg/Project/cpymo-work/ex
 - [x] 调试模式（按住 L 启动）
 - [x] 全局设置文件 + 键位自定义 + 设置页面
 - [x] 菜单打开时保留立绘；下屏语音/自动播放进度条
-- [ ] 下屏自定义背景图（`sdmc:/pymogames/bg.jpg|png`）
+- [x] 下屏自定义背景图（`sdmc:/pymogames/bg.jpg|png`）
+
+## 下屏背景图
+
+`cpymo_3ds_ui_init()` 按顺序尝试：`sdmc:/pymogames/bg.png` → `sdmc:/pymogames/bg.jpg`
+→ 内置 `romfs:/night-sky.png`。
+- 仅当尺寸合法才使用：4:3（如 320×240、640×480）或 400×240；最小 160×120。
+- 图片会被拉伸到 320×240（下屏）和 400×240（上屏信息面板），>1024 像素的图由图像后端
+  自动缩至≤512 再上传纹理。
+- 替换图片需重启程序（只在启动时加载一次）。
+- 读取依赖 `fsInit()`：`main()` 开头调用一次且不 `fsExit()`，保证 sdmc devoptab 全程可用
+  （`settings.txt`、`bg.png/jpg` 都是 `fopen` 直读）。
 
 ## 立绘与菜单
 
