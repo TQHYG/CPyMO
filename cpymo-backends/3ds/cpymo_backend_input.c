@@ -1,8 +1,10 @@
-﻿#include "../../cpymo/cpymo_prelude.h"
+#include "../../cpymo/cpymo_prelude.h"
 #include "../../cpymo/cpymo_engine.h"
 #include "../include/cpymo_backend_input.h"
+#include "settings_3ds.h"
 #include <3ds.h>
 #include <stdlib.h>
+#include <string.h>
 
 bool enhanced_3ds_display_mode_touch_ui_enabled(void);
 const extern bool enhanced_3ds_display_mode;
@@ -23,21 +25,59 @@ static bool touch_enabled(void) {
 const extern float game_width, game_height;
 const extern float ratio_wb, ratio_h;
 
+/* The selector and every menu keep the classic, fixed button mapping so that
+ * navigation, save/load and the launcher behave exactly like upstream. Only a
+ * running game (no UI on the stack) honours the player's custom bindings. */
+static bool using_default_mapping(void)
+{
+    return engine.ui != NULL || engine.assetloader.gamedir == NULL;
+}
+
+static void apply_default_mapping(cpymo_input *out, u32 keys)
+{
+    out->ok = (keys & KEY_A) > 0 || (keys & KEY_Y) > 0 || (keys & KEY_ZL) > 0 || (keys & KEY_ZR) > 0;
+    out->skip = (keys & KEY_R) > 0;
+    out->cancel = (keys & KEY_B) > 0 || (keys & KEY_X) > 0;
+    out->hide_window = (keys & KEY_L) > 0;
+    out->down = (keys & KEY_DOWN) > 0;
+    out->up = (keys & KEY_UP) > 0;
+    out->left = (keys & KEY_LEFT) > 0;
+    out->right = (keys & KEY_RIGHT) > 0;
+}
+
+static void apply_custom_mapping(cpymo_input *out)
+{
+    out->ok = cpymo_3ds_settings_action_held(cpymo_3ds_action_next);
+    out->skip = cpymo_3ds_settings_action_held(cpymo_3ds_action_skip);
+    out->hide_window = cpymo_3ds_settings_action_held(cpymo_3ds_action_hide);
+    out->cancel = cpymo_3ds_settings_action_held(cpymo_3ds_action_menu);
+
+    /* "history" is the engine's `up` key: it opens the backlog while reading.
+     * Actions without a cpymo_input equivalent (auto/save/load/settings/
+     * restart) are dispatched by main.c. */
+    out->up = cpymo_3ds_settings_action_held(cpymo_3ds_action_history);
+    out->down = false;
+    out->left = false;
+    out->right = false;
+}
+
 cpymo_input cpymo_input_snapshot()
 {
     cpymo_input out;
+    memset(&out, 0, sizeof(out));
+
     u32 keys = hidKeysHeld();
+
+    /* ZL/ZR mirror L/R and are never shown as separate buttons. */
+    if (keys & KEY_ZL) keys |= KEY_L;
+    if (keys & KEY_ZR) keys |= KEY_R;
+
     if ((hidKeysDown() & KEY_START) && !cpymo_3ds_debug_mode)
         cpymo_engine_exit(&engine);
 
-    out.ok = (keys & KEY_A) > 0 || (keys & KEY_Y) > 0 || (keys & KEY_ZL) > 0 || (keys & KEY_ZR) > 0;
-    out.skip = (keys & KEY_R) > 0;
-    out.cancel = (keys & KEY_B) > 0 || (keys & KEY_X) > 0;
-    out.hide_window = (keys & KEY_L) > 0;
-    out.down = (keys & KEY_DOWN) > 0;
-    out.up = (keys & KEY_UP) > 0;
-    out.left = (keys & KEY_LEFT) > 0;
-    out.right = (keys & KEY_RIGHT) > 0;
+    if (using_default_mapping()) apply_default_mapping(&out, keys);
+    else apply_custom_mapping(&out);
+
     out.mouse_button = (keys & KEY_TOUCH) > 0 && enhanced_3ds_display_mode;
     out.mouse_position_useable = out.mouse_button && touch_enabled();
     out.mouse_wheel_delta = 0;
@@ -86,4 +126,3 @@ cpymo_input cpymo_input_snapshot()
 
     return out;
 }
-

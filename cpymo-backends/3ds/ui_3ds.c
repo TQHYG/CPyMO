@@ -1,4 +1,5 @@
 #include "ui_3ds.h"
+#include "settings_3ds.h"
 #include "../include/cpymo_backend_image.h"
 #include <3ds.h>
 #include <citro2d.h>
@@ -6,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 
 extern C2D_Font cpymo_backend_text_3ds_font(void);
 extern void cpymo_3ds_draw_image_raw(cpymo_backend_image image, float x, float y, float w, float h);
@@ -26,6 +28,28 @@ static float ui_x(float x)
 #define COLOR_ACCENT C2D_Color32(91, 211, 232, 255)
 #define COLOR_HEADER C2D_Color32(22, 49, 76, 255)
 #define COLOR_SELECTED C2D_Color32(38, 91, 128, 255)
+
+/* Settings button in the bottom right corner of the launcher's bottom screen. */
+#define SETTINGS_BTN_X 244.0f
+#define SETTINGS_BTN_Y 194.0f
+#define SETTINGS_BTN_W 68.0f
+#define SETTINGS_BTN_H 38.0f
+
+static void settings_gear_icon(float x, float y, float size)
+{
+	const float c = size / 2.0f;
+
+	/* Six spokes around a ring: reads as a gear at this size. */
+	for (int i = 0; i < 6; ++i) {
+		const float t = (float)i * 3.14159265f / 3.0f;
+		const float tx = x + c + cosf(t) * c * 0.72f - c * 0.17f;
+		const float ty = y + c + sinf(t) * c * 0.72f - c * 0.17f;
+		C2D_DrawRectSolid(ui_x(tx), ty, 0, c * 0.34f, c * 0.34f, COLOR_ACCENT);
+	}
+
+	C2D_DrawCircleSolid(ui_x(x + c), y + c, 0, c * 0.60f, COLOR_ACCENT);
+	C2D_DrawCircleSolid(ui_x(x + c), y + c, 0, c * 0.24f, C2D_Color32(28, 62, 94, 255));
+}
 
 static void ui_text(const char *text, float x, float y, float size, u32 color, float max_width)
 {
@@ -49,6 +73,46 @@ static void panel_background(int width, int height)
 		u8 r = (u8)(13 + 7 * t), g = (u8)(27 + 11 * t), b = (u8)(45 + 18 * t);
 		C2D_DrawRectSolid(ui_x(-8), y, 0, width + 16, 12, C2D_Color32(r, g, b, 255));
 	}
+}
+
+/* Collects the button labels bound to `action` into out ("A / 下 / L"). */
+static void collect_keys(cpymo_3ds_action action, char *out, size_t size)
+{
+	const cpymo_3ds_settings *s = cpymo_3ds_settings_get();
+	out[0] = '\0';
+
+	for (int k = 0; k < cpymo_3ds_key_count; ++k) {
+		if (s->keys[k] != action) continue;
+		const size_t used = strlen(out);
+		if (used && used + 3 < size) strncat(out, " / ", size - used - 1);
+		strncat(out, cpymo_3ds_key_label(k), size - strlen(out) - 1);
+	}
+}
+
+int cpymo_3ds_ui_key_help_lines(char lines[][80], int max_lines)
+{
+	/* Order in which actions are listed; actions with no bound key are skipped
+	 * and "undefined" is never shown. ZL/ZR are intentionally absent. */
+	static const cpymo_3ds_action order[] = {
+		cpymo_3ds_action_next, cpymo_3ds_action_auto, cpymo_3ds_action_skip,
+		cpymo_3ds_action_hide, cpymo_3ds_action_history, cpymo_3ds_action_menu,
+		cpymo_3ds_action_save, cpymo_3ds_action_load,
+		cpymo_3ds_action_settings, cpymo_3ds_action_restart,
+	};
+
+	int count = 0;
+	for (size_t i = 0; i < sizeof(order) / sizeof(order[0]) && count < max_lines; ++i) {
+		char keys[48];
+		collect_keys(order[i], keys, sizeof(keys));
+		if (!keys[0]) continue;
+
+		snprintf(lines[count], 80, "%s：%s%s",
+			cpymo_3ds_action_label(order[i]), keys,
+			order[i] == cpymo_3ds_action_hide ? "（按住）" : "");
+		++count;
+	}
+
+	return count;
 }
 
 static void panel_header(int width)
@@ -152,8 +216,17 @@ void cpymo_3ds_ui_draw_launcher(const cpymo_game_selector_item *selected)
 			for (int row = 0; row < 4 && item; ++row, item = item->next)
 				launcher_row(item, 41 + row * 39, item == selected);
 		}
-		ui_text("A 启动 · 上下选择 · START 退出", 12, 211, 12, COLOR_ACCENT, 292);
-		ui_text("进入游戏后 SELECT 切换显示模式", 12, 231, 11, COLOR_MUTED, 296);
+		ui_text("A 启动 · 上下选择", 12, 218, 12, COLOR_ACCENT, 190);
+		ui_text("START 退出 · SELECT 切换显示模式", 12, 234, 11, COLOR_MUTED, 232);
+
+		/* Settings entry: icon + text in the bottom right corner. */
+		C2D_DrawRectSolid(ui_x(SETTINGS_BTN_X), SETTINGS_BTN_Y, 0,
+			SETTINGS_BTN_W, SETTINGS_BTN_H, C2D_Color32(28, 62, 94, 255));
+		C2D_DrawRectSolid(ui_x(SETTINGS_BTN_X), SETTINGS_BTN_Y, 0,
+			2, SETTINGS_BTN_H, COLOR_ACCENT);
+		settings_gear_icon(SETTINGS_BTN_X + 9, SETTINGS_BTN_Y + 9, 17);
+		ui_text("设置", SETTINGS_BTN_X + 34, SETTINGS_BTN_Y + 25, 14, COLOR_WHITE, 32);
+		ui_text("Y", SETTINGS_BTN_X + 34, SETTINGS_BTN_Y + 11, 10, COLOR_ACCENT, 14);
 	}
 	ui_layer = 0;
 }
@@ -167,16 +240,19 @@ void cpymo_3ds_ui_draw_help(int width, int mode)
 	ui_text("CPyMO for 3DS", 14, 23, width == 400 ? 18 : 16, COLOR_WHITE, width - 85);
 	cpymo_3ds_ui_draw_clock(width);
 	const float x = width == 400 ? 22 : 16;
-	const float size = width == 400 ? 16 : 13;
-	const float step = width == 400 ? 23 : 22;
-	ui_text("A / Y / ZL / ZR / ↓：继续", x, 56, size, COLOR_WHITE, width - 32);
-	ui_text("↑：历史对话", x, 56 + step, size, COLOR_WHITE, width - 32);
-	ui_text("X / B：菜单 · 返回", x, 56 + step * 2, size, COLOR_WHITE, width - 32);
-	ui_text("L 按住：隐藏文字", x, 56 + step * 3, size, COLOR_WHITE, width - 32);
-	ui_text("R：快进", x, 56 + step * 4, size, COLOR_WHITE, width - 32);
-	ui_text("SELECT：切换显示模式", x, 56 + step * 5, size, COLOR_ACCENT, width - 32);
-	ui_text("START：返回游戏选择", x, 56 + step * 6, size, COLOR_MUTED, width - 32);
-	ui_text("SELECT：切换画面比例与台词位置", x, 226, 12, COLOR_ACCENT, width - 32);
+	const float size = width == 400 ? 15 : 12;
+	const float step = width == 400 ? 21 : 19;
+
+	/* The key list is generated from the current bindings, so remapping a
+	 * button updates this help automatically. ZL/ZR are never listed (they
+	 * mirror L/R). */
+	char lines[8][80];
+	const int count = cpymo_3ds_ui_key_help_lines(lines, 8);
+	for (int i = 0; i < count; ++i)
+		ui_text(lines[i], x, 54 + step * i, size, COLOR_WHITE, width - 32);
+
+	ui_text("SELECT：切换显示模式", x, 54 + step * count, size, COLOR_ACCENT, width - 32);
+	ui_text("START：返回游戏选择", x, 54 + step * (count + 1), size, COLOR_MUTED, width - 32);
 }
 
 void cpymo_3ds_ui_draw_enhanced_background(void)
@@ -188,6 +264,262 @@ void cpymo_3ds_ui_draw_enhanced_background(void)
 void cpymo_3ds_ui_draw_enhanced_hints(void)
 {
 	C2D_DrawRectSolid(0, 222, 0, 320, 18, C2D_Color32(8, 24, 45, 165));
-	ui_text("A / ↓ 继续 · SELECT 显示模式", 12, 235, 11, COLOR_WHITE, 250);
+
+	char keys[48];
+	collect_keys(cpymo_3ds_action_next, keys, sizeof(keys));
+	char line[96];
+	if (keys[0]) snprintf(line, sizeof(line), "%s 继续 · SELECT 显示模式", keys);
+	else snprintf(line, sizeof(line), "SELECT 显示模式");
+	ui_text(line, 12, 235, 11, COLOR_WHITE, 250);
+
 	cpymo_3ds_ui_draw_clock(320);
+}
+
+/* ------------------------------------------------------------------------ *
+ * Global settings page (sdmc:/pymogames/settings.txt)
+ * ------------------------------------------------------------------------ */
+
+enum { settings_page_root = 0, settings_page_keys };
+
+#define SETTINGS_ROOT_ITEMS 5
+#define SETTINGS_ROOT_ITEM_KEYS 3
+#define SETTINGS_ROOT_ITEM_RESET 4
+
+static struct {
+	bool open;
+	int page;
+	int cursor;
+} settings_state;
+
+bool cpymo_3ds_ui_settings_open(void) { return settings_state.open; }
+
+void cpymo_3ds_ui_settings_enter(void)
+{
+	settings_state.open = true;
+	settings_state.page = settings_page_root;
+	settings_state.cursor = 0;
+}
+
+bool cpymo_3ds_ui_settings_hit(float x, float y)
+{
+	return x >= SETTINGS_BTN_X && x < SETTINGS_BTN_X + SETTINGS_BTN_W
+		&& y >= SETTINGS_BTN_Y && y < SETTINGS_BTN_Y + SETTINGS_BTN_H;
+}
+
+static void settings_format_value(int item, char *out, size_t size)
+{
+	const cpymo_3ds_settings *s = cpymo_3ds_settings_get();
+
+	switch (item) {
+	case 0:
+		if (s->display_mode < 0) snprintf(out, size, "跟随游戏");
+		else snprintf(out, size, "模式 %d", s->display_mode + 1);
+		break;
+	case 1:
+		if (s->fontsize <= 0) snprintf(out, size, "跟随游戏");
+		else snprintf(out, size, "%d", s->fontsize);
+		break;
+	case 2:
+		if (s->textspeed < 0) snprintf(out, size, "跟随游戏");
+		else snprintf(out, size, "%d / 5", s->textspeed);
+		break;
+	default:
+		out[0] = '\0';
+		break;
+	}
+}
+
+static void settings_change_value(int item, int dir)
+{
+	cpymo_3ds_settings *s = cpymo_3ds_settings_mutable();
+
+	switch (item) {
+	case 0: {
+		/* -1 (follow the game) then modes 0..3 */
+		const int values = 5;
+		int index = s->display_mode + 1;
+		if (index < 0) index = 0;
+		if (index >= values) index = values - 1;
+		index = (index + dir + values) % values;
+		s->display_mode = index - 1;
+		break;
+	}
+	case 1:
+		if (s->fontsize <= 0) s->fontsize = dir > 0 ? 12 : 32;
+		else {
+			int value = s->fontsize + dir * 2;
+			if (value < 12) value = 0;
+			if (value > 32) value = 32;
+			s->fontsize = value;
+		}
+		break;
+	case 2:
+		if (s->textspeed < 0) s->textspeed = dir > 0 ? 0 : 5;
+		else {
+			int value = s->textspeed + dir;
+			if (value < 0) value = -1;
+			if (value > 5) value = 5;
+			s->textspeed = value;
+		}
+		break;
+	default:
+		break;
+	}
+
+	cpymo_3ds_settings_save();
+}
+
+static void settings_change_key(int key, int dir)
+{
+	cpymo_3ds_settings *s = cpymo_3ds_settings_mutable();
+	int action = (int)s->keys[key] + dir;
+	while (action < 0) action += cpymo_3ds_action_count;
+	action %= cpymo_3ds_action_count;
+	s->keys[key] = (cpymo_3ds_action)action;
+	cpymo_3ds_settings_save();
+}
+
+void cpymo_3ds_ui_settings_update(void)
+{
+	if (!settings_state.open) return;
+
+	const u32 pressed = hidKeysDown();
+
+	if (settings_state.page == settings_page_root) {
+		if (pressed & KEY_UP)
+			settings_state.cursor =
+				(settings_state.cursor + SETTINGS_ROOT_ITEMS - 1) % SETTINGS_ROOT_ITEMS;
+		if (pressed & KEY_DOWN)
+			settings_state.cursor =
+				(settings_state.cursor + 1) % SETTINGS_ROOT_ITEMS;
+
+		if (pressed & KEY_LEFT) settings_change_value(settings_state.cursor, -1);
+		if (pressed & KEY_RIGHT) settings_change_value(settings_state.cursor, 1);
+
+		if (pressed & KEY_A) {
+			if (settings_state.cursor == SETTINGS_ROOT_ITEM_KEYS) {
+				settings_state.page = settings_page_keys;
+				settings_state.cursor = 0;
+			}
+			else if (settings_state.cursor == SETTINGS_ROOT_ITEM_RESET) {
+				cpymo_3ds_settings_set_defaults(cpymo_3ds_settings_mutable());
+				cpymo_3ds_settings_save();
+			}
+			else settings_change_value(settings_state.cursor, 1);
+		}
+
+		if (pressed & KEY_B) settings_state.open = false;
+	}
+	else {
+		if (pressed & KEY_UP)
+			settings_state.cursor =
+				(settings_state.cursor + cpymo_3ds_key_count - 1) % cpymo_3ds_key_count;
+		if (pressed & KEY_DOWN)
+			settings_state.cursor =
+				(settings_state.cursor + 1) % cpymo_3ds_key_count;
+
+		if (pressed & KEY_LEFT) settings_change_key(settings_state.cursor, -1);
+		if (pressed & KEY_RIGHT) settings_change_key(settings_state.cursor, 1);
+		if (pressed & KEY_A) settings_change_key(settings_state.cursor, 1);
+
+		if (pressed & KEY_B) {
+			settings_state.page = settings_page_root;
+			settings_state.cursor = SETTINGS_ROOT_ITEM_KEYS;
+		}
+	}
+}
+
+static void settings_draw_top(void)
+{
+	ui_layer = -2.0f;
+	panel_background(400, 240);
+	ui_layer = 0;
+	C2D_DrawRectSolid(0, 0, 0, 400, 32, COLOR_HEADER);
+	ui_text("CPyMO for 3DS · 设置", 16, 23, 18, COLOR_WHITE, 320);
+
+	ui_text("全局设置保存在 sdmc:/pymogames/settings.txt", 20, 62, 13, COLOR_MUTED, 364);
+	ui_text("游戏内设置过的项目（存档中的设置）优先，", 20, 86, 13, COLOR_MUTED, 364);
+	ui_text("这里的值只作为未设置时的默认值。", 20, 108, 13, COLOR_MUTED, 364);
+
+	char line[80];
+	settings_format_value(0, line, sizeof(line));
+	char text[128];
+	snprintf(text, sizeof(text), "默认显示模式：%s", line);
+	ui_text(text, 20, 146, 14, COLOR_ACCENT, 364);
+
+	settings_format_value(1, line, sizeof(line));
+	snprintf(text, sizeof(text), "默认字体大小：%s", line);
+	ui_text(text, 20, 170, 14, COLOR_ACCENT, 364);
+
+	settings_format_value(2, line, sizeof(line));
+	snprintf(text, sizeof(text), "默认播放速度：%s", line);
+	ui_text(text, 20, 194, 14, COLOR_ACCENT, 364);
+
+	cpymo_3ds_ui_draw_clock(400);
+}
+
+void cpymo_3ds_ui_settings_draw(bool bottom_screen)
+{
+	ui_layer = 0;
+
+	if (!bottom_screen) {
+		settings_draw_top();
+		return;
+	}
+
+	panel_background(320, 240);
+	panel_header(320);
+	cpymo_3ds_ui_draw_clock(320);
+
+	const cpymo_3ds_settings *s = cpymo_3ds_settings_get();
+	char value[32];
+
+	if (settings_state.page == settings_page_root) {
+		static const char *const labels[SETTINGS_ROOT_ITEMS] = {
+			"默认显示模式", "默认字体大小", "默认播放速度", "键位设置", "恢复默认设置",
+		};
+
+		ui_text("设置", 14, 23, 17, COLOR_WHITE, 170);
+
+		for (int i = 0; i < SETTINGS_ROOT_ITEMS; ++i) {
+			const float y = 41 + i * 33;
+			const bool selected = i == settings_state.cursor;
+
+			C2D_DrawRectSolid(ui_x(8), y, 0, 304, 29,
+				selected ? COLOR_SELECTED : C2D_Color32(20, 43, 66, 255));
+			if (selected)
+				C2D_DrawRectSolid(ui_x(8), y, 0, 3, 29, COLOR_ACCENT);
+
+			ui_text(labels[i], 20, y + 20, 14,
+				selected ? COLOR_WHITE : COLOR_MUTED, 170);
+
+			if (i <= 2) {
+				settings_format_value(i, value, sizeof(value));
+				ui_text(value, 205, y + 20, 13, COLOR_ACCENT, 100);
+			}
+		}
+
+		ui_text("上下选择 · 左右修改 · A 确认 · B 返回", 12, 232, 11, COLOR_MUTED, 296);
+	}
+	else {
+		ui_text("键位设置", 14, 23, 17, COLOR_WHITE, 200);
+
+		for (int i = 0; i < cpymo_3ds_key_count; ++i) {
+			const int column = i / 5;
+			const float x = 10 + column * 156;
+			const float y = 40 + (i % 5) * 34;
+			const bool selected = i == settings_state.cursor;
+
+			C2D_DrawRectSolid(ui_x(x), y, 0, 148, 30,
+				selected ? COLOR_SELECTED : C2D_Color32(20, 43, 66, 255));
+			if (selected)
+				C2D_DrawRectSolid(ui_x(x), y, 0, 3, 30, COLOR_ACCENT);
+
+			ui_text(cpymo_3ds_key_label(i), x + 10, y + 21, 14, COLOR_WHITE, 30);
+			ui_text(cpymo_3ds_action_label(s->keys[i]), x + 46, y + 21, 12,
+				selected ? COLOR_WHITE : COLOR_MUTED, 96);
+		}
+
+		ui_text("左右切换功能 · A 下一个 · B 返回", 12, 232, 11, COLOR_MUTED, 296);
+	}
 }

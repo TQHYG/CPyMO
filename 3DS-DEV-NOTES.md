@@ -68,6 +68,39 @@ C:\dev\devkitPro\msys2\usr\bin\bash.exe -lc 'bash /d/tqhyg/Project/cpymo-work/ex
 
 - [x] 修复：旧存档显示模式映射、`screen3` 泄漏、初始化失败 double free、stbi 内存泄漏、按键优先级括号
 - [x] 调试模式（按住 L 启动）
-- [ ] 全局设置文件 + 键位自定义 + 设置页面
+- [x] 全局设置文件 + 键位自定义 + 设置页面
 - [ ] 菜单打开时保留立绘；下屏语音/自动播放进度条
 - [ ] 下屏自定义背景图（`sdmc:/pymogames/bg.jpg|png`）
+
+## 全局设置（已实现）
+
+`sdmc:/pymogames/settings.txt`（UTF-8 文本，`key=value`，`#` 注释，未知行忽略，缺失/损坏就用默认值）：
+
+```
+display_mode=-1      # -1 跟随游戏；0..3 = 强制默认显示模式（游戏无自己的存档时生效）
+fontsize=0           # 0 跟随游戏；12..32 = 默认字体大小
+textspeed=-1         # -1 跟随游戏；0..5 = 默认文字速度
+key_up=history       # 每个按键：undefined|next|auto|save|load|skip|hide|history|menu|settings|restart
+key_down=next
+key_left=undefined
+key_right=undefined
+key_a=next
+key_b=auto
+key_x=hide
+key_y=menu
+key_l=next
+key_r=skip
+```
+
+- **优先级**：游戏自己的 `save/config.csav`（玩家在游戏内「设置」里改过）> 全局默认 > 游戏
+  `config.txt` > 引擎默认。全局默认不会写进任何游戏存档目录。
+- 显示模式：`<gamedir>/save/3ds-display-mode.csav` 存在时以其为准，否则用 `display_mode`。
+- **键位只影响“游戏中”**：选择器和所有菜单仍用固定映射（A/Y/ZL/ZR=确认，B/X=取消，
+  L=隐藏，R=快进，方向键=导航），所以存读档/菜单导航/启动器行为不变。
+- 无法用 `cpymo_input` 表达的动作（auto/save/load/settings/restart）由 `main.c` 的
+  `cpymo_3ds_dispatch_actions()` 直接调用引擎 UI（`cpymo_save_ui_enter`、
+  `cpymo_config_ui_enter`、`cpymo_rmenu_restart_game`）完成；`history` 复用引擎的 `up`，
+  `menu` 复用 `cancel`，`next`→`ok`，`skip`→`skip`，`hide`→`hide_window`。
+- ZL/ZR 在 `settings_3ds.c` 的 `key_bits()` 里并入 L/R，不可单独绑定，UI 文案里也不出现。
+- 设置页面：选择器下屏右下角图标+文字，按 Y 或触摸进入；上下选择、左右改值、A 确认、
+  B 返回。改动立即写回 `settings.txt`。

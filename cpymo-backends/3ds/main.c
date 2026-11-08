@@ -26,6 +26,10 @@
 
 #include "../include/cpymo_backend_text.h"
 #include "../include/cpymo_backend_save.h"
+#include "../../cpymo/cpymo_save_ui.h"
+#include "../../cpymo/cpymo_config_ui.h"
+#include "../../cpymo/cpymo_rmenu.h"
+#include "settings_3ds.h"
 #include "ui_3ds.h"
 
 cpymo_engine engine;
@@ -120,7 +124,11 @@ static void save_screen_mode()
 
 static void load_screen_mode(const char *gamedir)
 {
-	display_mode = 1;
+	/* Fall back to the global default display mode until a per-game mode is
+	 * found. */
+	display_mode = cpymo_3ds_settings_get()->display_mode;
+	if (display_mode < 0 || display_mode > 3) display_mode = 1;
+
 	FILE *sav = cpymo_backend_read_save(gamedir, "3ds-display-mode.csav");
 
 	if (sav) {
@@ -273,8 +281,73 @@ static error_t before_select_game(cpymo_engine *e, const char *gamedir)
 
 static error_t after_select_game(cpymo_engine *e, const char *gamedir)
 {
+	/* Global settings only fill in what this game does not define itself: as
+	 * soon as the player changed the in-game settings (config.csav exists) the
+	 * game's own values win. Nothing is written into the game's save dir. */
+	const cpymo_3ds_settings *s = cpymo_3ds_settings_get();
+	bool has_own_config = false;
+	FILE *own = cpymo_backend_read_save(gamedir, "config.csav");
+	if (own) {
+		has_own_config = true;
+		fclose(own);
+	}
+
+	if (!has_own_config) {
+		if (s->fontsize > 0) e->gameconfig.fontsize = (uint16_t)s->fontsize;
+		if (s->textspeed >= 0) e->gameconfig.textspeed = (unsigned)s->textspeed;
+	}
+
 	cpymo_backend_image_init(e->gameconfig.imagesize_w, e->gameconfig.imagesize_h);
 	return CPYMO_ERR_SUCC;
+}
+
+/* Actions that cannot be expressed through cpymo_input (see
+ * cpymo_backend_input.c) are turned into engine calls here. Only a running
+ * game without an open menu is affected, so menus and the selector keep their
+ * upstream behaviour. */
+static void cpymo_3ds_dispatch_actions(void)
+{
+	if (engine.ui) return;
+	if (engine.assetloader.gamedir == NULL) return;
+
+	if (cpymo_3ds_settings_action_pressed(cpymo_3ds_action_auto)) {
+		if (engine.say.auto_mode) cpymo_say_stop_auto_mode(&engine);
+		else {
+			engine.say.auto_mode = true;
+			engine.say.auto_mode_timer = -1;
+			cpymo_engine_request_redraw(&engine);
+		}
+	}
+
+	if (cpymo_3ds_settings_action_pressed(cpymo_3ds_action_save)) {
+		error_t err = cpymo_save_ui_enter(&engine, false);
+		if (err != CPYMO_ERR_SUCC)
+			printf("[Error] open save menu: %s\n", cpymo_error_message(err));
+	}
+
+	if (cpymo_3ds_settings_action_pressed(cpymo_3ds_action_load)) {
+		error_t err = cpymo_save_ui_enter(&engine, true);
+		if (err != CPYMO_ERR_SUCC)
+			printf("[Error] open load menu: %s\n", cpymo_error_message(err));
+	}
+
+	if (cpymo_3ds_settings_action_pressed(cpymo_3ds_action_settings)) {
+		error_t err = cpymo_config_ui_enter(&engine);
+		if (err != CPYMO_ERR_SUCC)
+			printf("[Error] open settings: %s\n", cpymo_error_message(err));
+	}
+
+	if (cpymo_3ds_settings_action_pressed(cpymo_3ds_action_restart)) {
+		error_t err = cpymo_rmenu_restart_game(&engine, NULL, true);
+		if (err != CPYMO_ERR_SUCC)
+			printf("[Error] restart game: %s\n", cpymo_error_message(err));
+		else {
+			load_screen_mode(engine.assetloader.gamedir);
+			enhanced_3ds_display_mode = (display_mode & 1) != 0;
+			fill_screen = (display_mode & 2) == 0;
+			cpymo_backend_image_init(400, 240);
+		}
+	}
 }
 
 static error_t return_to_game_selector(cpymo_game_selector_item **selector_items)
@@ -309,6 +382,11 @@ static error_t return_to_game_selector(cpymo_game_selector_item **selector_items
 
 int main(void) {
 	srand((unsigned)time(NULL));
+
+	/* sdmc:/pymogames/settings.txt - global frontend settings, never part of a
+	 * game save. */
+	cpymo_3ds_settings_load();
+
 	engine.ui = NULL;
 	engine.say.active = false;
 	bool is_new_3ds = false;
@@ -421,31 +499,64 @@ int main(void) {
 
 		hidScanInput();
 
+		cpymo_3ds_dispatch_actions();
+
 		bool redraw = false;
+		bool settings_open = cpymo_3ds_ui_settings_open();
+
+		/* Settings page: only reachable from the game selector. While it is
+		 * open it replaces both screens and pauses the selector. */
+		if (settings_open) {
+			cpymo_3ds_ui_settings_update();
+			redraw = true;
+		}
+		else if (engine.assetloader.gamedir == NULL && engine.ui) {
+			bool open_settings = (hidKeysDown() & KEY_Y) != 0;
+
+			if (hidKeysDown() & KEY_TOUCH) {
+				touchPosition touch;
+				hidTouchRead(&touch);
+				if (cpymo_3ds_ui_settings_hit((float)touch.px, (float)touch.py))
+					open_settings = true;
+			}
+
+			if (open_settings) {
+				cpymo_3ds_ui_settings_enter();
+				/* Y is also the selector's "ok" button, so the selector must not
+				 * see this frame's input. */
+				settings_open = true;
+				redraw = true;
+			}
+		}
 
 		osTickCounterUpdate(&tickCounter);
 		double deltaTime = osTickCounterRead(&tickCounter) / 1000.0;
-		err = cpymo_engine_update(&engine, (float)deltaTime, &redraw);
-		switch(err) {
-		case CPYMO_ERR_NO_MORE_CONTENT:
-			if (engine.assetloader.gamedir) {
-				err = return_to_game_selector(&selector_items);
-				if (err != CPYMO_ERR_SUCC) goto EXIT;
-				redraw = true;
-				continue;
-			}
-			goto EXIT;
-		case CPYMO_ERR_SUCC: break;
-		default: {
-			printf("[Error] %s(%d).\n", cpymo_error_message(err), err);
-			while(aptMainLoop()) {
-				hidScanInput();
-				gspWaitForVBlank();
 
-				u32 keys = hidKeysHeld();
-				if((keys & KEY_ZL)) goto EXIT;
+		/* The engine is frozen while the settings page is open so that the
+		 * selector does not move behind it. */
+		if (!settings_open) {
+			err = cpymo_engine_update(&engine, (float)deltaTime, &redraw);
+			switch(err) {
+			case CPYMO_ERR_NO_MORE_CONTENT:
+				if (engine.assetloader.gamedir) {
+					err = return_to_game_selector(&selector_items);
+					if (err != CPYMO_ERR_SUCC) goto EXIT;
+					redraw = true;
+					continue;
+				}
+				goto EXIT;
+			case CPYMO_ERR_SUCC: break;
+			default: {
+				printf("[Error] %s(%d).\n", cpymo_error_message(err), err);
+				while(aptMainLoop()) {
+					hidScanInput();
+					gspWaitForVBlank();
+
+					u32 keys = hidKeysHeld();
+					if((keys & KEY_ZL)) goto EXIT;
+				}
 			}
-		}
+			}
 		}
 
 		float slider = osGet3DSliderState();
@@ -465,6 +576,7 @@ int main(void) {
 		if(redraw || true) {
 			drawing_bottom_screen = false;
 			bool selecting = engine.assetloader.gamedir == NULL;
+			const bool settings_page = cpymo_3ds_ui_settings_open();
 			const cpymo_game_selector_item *selected = NULL;
 			if (selecting && selector_items && selector_items->gametitle)
 				selected = cpymo_list_ui_get_current_selected_const(&engine);
@@ -474,7 +586,8 @@ int main(void) {
 			C2D_SceneBegin(screen1);
 			render_3d_offset = slider;
 
-			if (selecting) {
+			if (settings_page) cpymo_3ds_ui_settings_draw(false);
+			else if (selecting) {
 				cpymo_engine_draw(&engine);
 				cpymo_3ds_ui_draw_launcher(selected);
 			}
@@ -484,7 +597,8 @@ int main(void) {
 				C2D_TargetClear(screen2, clr);
 				C2D_SceneBegin(screen2);
 				render_3d_offset = -slider;
-				if (selecting) cpymo_3ds_ui_draw_launcher(selected);
+				if (settings_page) cpymo_3ds_ui_settings_draw(false);
+				else if (selecting) cpymo_3ds_ui_draw_launcher(selected);
 				else cpymo_engine_draw(&engine);
 			}
 
@@ -494,7 +608,11 @@ int main(void) {
 				C2D_SceneBegin(screen3);
 				C2D_TargetClear(screen3, clr);
 				render_3d_offset = 0;
-				if (selecting) {
+				if (settings_page) {
+					drawing_bottom_screen = true;
+					cpymo_3ds_ui_settings_draw(true);
+				}
+				else if (selecting) {
 					drawing_bottom_screen = true;
 					cpymo_3ds_ui_draw_launcher(selected);
 				}
