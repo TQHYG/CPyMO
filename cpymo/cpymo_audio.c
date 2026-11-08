@@ -18,6 +18,7 @@ static inline void cpymo_audio_channel_init(cpymo_audio_channel *c)
 	c->codec_context = NULL;
 	c->swr_context = NULL;
 	c->converted_frame_current_offset = 0;
+	c->decoded_samples = 0;
 	c->io_context = NULL;
 }
 
@@ -152,6 +153,7 @@ static error_t cpymo_audio_channel_convert_current_frame(cpymo_audio_channel *c)
 		cpymo_audio_fmt2ffmpeg(info->format),
 		1);
 
+	c->decoded_samples += (uint64_t)samples;
 	c->converted_frame_current_offset = 0;
 	return CPYMO_ERR_SUCC;
 }
@@ -472,6 +474,7 @@ static error_t cpymo_audio_channel_play_file(
 
 	c->loop = loop;
 	c->converted_frame_current_offset = 0;
+	c->decoded_samples = 0;
 
 	// read first frame
 	if (cpymo_audio_channel_next_frame(c) != CPYMO_ERR_SUCC) {
@@ -768,6 +771,28 @@ bool cpymo_audio_channel_is_playing(size_t cid, cpymo_audio_system *s)
 bool cpymo_audio_channel_is_looping(size_t cid, cpymo_audio_system *s)
 { return s->channels[cid].loop; }
 
+float cpymo_audio_channel_progress(size_t cid, cpymo_audio_system *s)
+{
+	const cpymo_backend_audio_info *info = cpymo_backend_audio_get_info();
+	if (info == NULL || info->freq <= 0) return -1.0f;
+
+	cpymo_audio_channel *c = &s->channels[cid];
+	if (!c->enabled || c->format_context == NULL) return -1.0f;
+
+	const int64_t duration_us = c->format_context->duration;
+	if (duration_us <= 0) return -1.0f;
+
+	const double total_samples =
+		(double)duration_us / 1000000.0 * (double)info->freq;
+	if (total_samples <= 0) return -1.0f;
+
+	double progress = (double)c->decoded_samples / total_samples;
+	if (progress < 0) progress = 0;
+	if (progress > 1) progress = 1;
+
+	return (float)progress;
+}
+
 #endif
 
 #ifdef DISABLE_AUDIO
@@ -844,6 +869,9 @@ bool cpymo_audio_channel_is_playing(size_t cid, cpymo_audio_system *s)
 
 bool cpymo_audio_channel_is_looping(size_t cid, cpymo_audio_system *s)
 { return false; }
+
+float cpymo_audio_channel_progress(size_t cid, cpymo_audio_system *s)
+{ return -1.0f; }
 
 #endif
 

@@ -351,6 +351,16 @@ error_t cpymo_engine_update(cpymo_engine *engine, float delta_time_sec, bool * r
 void cpymo_engine_draw(const cpymo_engine *engine)
 {
 	if (cpymo_ui_enabled(engine)) {
+		/* Keep the game scene (background + character sprites) visible behind
+		 * menus: a UI may draw its own background over it, but sprites must not
+		 * disappear just because a menu is open. The game selector has no game
+		 * loaded, so it is unaffected. */
+		if (engine->assetloader.gamedir != NULL) {
+			cpymo_bg_draw(engine);
+			cpymo_scroll_draw(&engine->scroll);
+			cpymo_charas_draw(engine);
+		}
+
 		cpymo_ui_draw(engine);
 		return;
 	}

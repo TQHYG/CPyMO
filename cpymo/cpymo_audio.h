@@ -42,6 +42,10 @@ typedef struct {
 	bool enabled, loop;
 
 	float volume;
+
+	/* Output samples produced since this channel started; used for a voice
+	 * progress indicator. */
+	uint64_t decoded_samples;
 	
 	AVFormatContext *format_context;
 	AVCodecContext *codec_context;
@@ -87,6 +91,9 @@ void cpymo_audio_set_channel_volume(size_t cid, cpymo_audio_system *s, float vol
 
 bool cpymo_audio_channel_is_playing(size_t cid, cpymo_audio_system *s);
 bool cpymo_audio_channel_is_looping(size_t cid, cpymo_audio_system *s);
+
+/* Playback progress of a channel in 0..1, or -1 when unknown/not playing. */
+float cpymo_audio_channel_progress(size_t cid, cpymo_audio_system *s);
 
 struct cpymo_engine;
 bool cpymo_audio_enabled(struct cpymo_engine *e);

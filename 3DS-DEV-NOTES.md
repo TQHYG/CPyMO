@@ -69,8 +69,31 @@ C:\dev\devkitPro\msys2\usr\bin\bash.exe -lc 'bash /d/tqhyg/Project/cpymo-work/ex
 - [x] 修复：旧存档显示模式映射、`screen3` 泄漏、初始化失败 double free、stbi 内存泄漏、按键优先级括号
 - [x] 调试模式（按住 L 启动）
 - [x] 全局设置文件 + 键位自定义 + 设置页面
-- [ ] 菜单打开时保留立绘；下屏语音/自动播放进度条
+- [x] 菜单打开时保留立绘；下屏语音/自动播放进度条
 - [ ] 下屏自定义背景图（`sdmc:/pymogames/bg.jpg|png`）
+
+## 立绘与菜单
+
+`cpymo_engine_draw()` 在有游戏加载且 UI 打开时，先画 `cpymo_bg_draw` +
+`cpymo_scroll_draw` + `cpymo_charas_draw`，再画 UI。因此菜单打开时立绘不再消失：
+- 下屏增强模式：bg/立绘在上屏，菜单/设置面板在下屏。
+- 上屏模式：立绘在下，菜单半透明面板与菜单项覆盖其上。
+- `cpymo_rmenu_draw()` 不再自己画 bg/scroll（否则会盖掉刚画的立绘），
+  其它自带背景的 UI（msgbox、选择器 list_ui）保持原行为。
+
+## 下屏进度条
+
+`cpymo_3ds_ui_draw_progress()`（`ui_3ds.c`），画在下屏右下角（x=232,y=202,76×6）：
+- 语音播放中 → voice 进度条（高亮色）+ 小字 `voice`；
+- 否则自动播放等待中 → wait 进度条（白色）+ 小字 `wait`；
+- 两者都没有 → 不画。
+
+数据来源：
+- `cpymo_audio_channel_progress()`（`cpymo_audio.c`）：新增 `decoded_samples` 计数，
+  除以 `format_context->duration × 后端采样率` 得到 0..1（解码位置，比实际播放略提前一个
+  音频缓冲）。
+- `cpymo_say_auto_mode_progress()`（`cpymo_say.c`）：`1 - auto_mode_timer / 2.0s`。
+- 帮助面板（模式 1/3）与台词下屏（模式 2/4）都会显示；帮助行数上限改为 6 行避免重叠。
 
 ## 全局设置（已实现）
 

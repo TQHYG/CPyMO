@@ -61,8 +61,9 @@ static void cpymo_rmenu_draw(const cpymo_engine *e, const void *ui_data)
 {
 	const cpymo_rmenu *r = (const cpymo_rmenu *)ui_data;
 
-	cpymo_bg_draw(e);
-	cpymo_scroll_draw(&e->scroll);
+	/* Background and scroll layer are drawn by cpymo_engine_draw() before the UI
+	 * so that character sprites stay visible behind the menu. Drawing them again
+	 * here would paint over those sprites. */
 
 	#ifdef __3DS__
 	if (fill_screen && !enhanced_3ds_display_mode)

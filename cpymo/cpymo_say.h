@@ -51,4 +51,7 @@ void cpymo_say_hidewindow_until_click(struct cpymo_engine *e);
 
 void cpymo_say_stop_auto_mode(struct cpymo_engine *e);
 
+/* 0..1 progress of the auto-mode wait, or -1 when auto mode is not waiting. */
+float cpymo_say_auto_mode_progress(const struct cpymo_engine *e);
+
 #endif

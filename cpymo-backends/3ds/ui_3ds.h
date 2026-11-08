@@ -12,6 +12,10 @@ void cpymo_3ds_ui_draw_enhanced_background(void);
 void cpymo_3ds_ui_draw_enhanced_hints(void);
 void cpymo_3ds_ui_draw_clock(int width);
 
+/* Voice / auto play progress bar in the bottom right corner of the bottom
+ * screen. Draws nothing when no voice is playing and auto play is idle. */
+void cpymo_3ds_ui_draw_progress(void);
+
 /* Fills `lines` with "<action>：<keys>" help text based on the current global
  * key bindings and returns how many lines were written. */
 int cpymo_3ds_ui_key_help_lines(char lines[][80], int max_lines);

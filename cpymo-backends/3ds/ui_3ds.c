@@ -17,6 +17,7 @@ static C2D_TextBuf ui_text_buf;
 static cpymo_backend_image night_sky;
 static float ui_layer;
 extern float render_3d_offset;
+extern cpymo_engine engine;
 
 static float ui_x(float x)
 {
@@ -247,12 +248,51 @@ void cpymo_3ds_ui_draw_help(int width, int mode)
 	 * button updates this help automatically. ZL/ZR are never listed (they
 	 * mirror L/R). */
 	char lines[8][80];
-	const int count = cpymo_3ds_ui_key_help_lines(lines, 8);
+	const int count = cpymo_3ds_ui_key_help_lines(lines, 6);
 	for (int i = 0; i < count; ++i)
 		ui_text(lines[i], x, 54 + step * i, size, COLOR_WHITE, width - 32);
 
 	ui_text("SELECT：切换显示模式", x, 54 + step * count, size, COLOR_ACCENT, width - 32);
 	ui_text("START：返回游戏选择", x, 54 + step * (count + 1), size, COLOR_MUTED, width - 32);
+
+	cpymo_3ds_ui_draw_progress();
+}
+
+void cpymo_3ds_ui_draw_progress(void)
+{
+	float progress = -1.0f;
+	const char *label = NULL;
+	bool voice = false;
+
+	if (cpymo_audio_channel_is_playing(CPYMO_AUDIO_CHANNEL_VO, &engine.audio)) {
+		progress = cpymo_audio_channel_progress(CPYMO_AUDIO_CHANNEL_VO, &engine.audio);
+		label = "voice";
+		voice = true;
+	}
+
+	if (progress < 0.0f) {
+		progress = cpymo_say_auto_mode_progress(&engine);
+		label = "wait";
+		voice = false;
+	}
+
+	/* Nothing is playing and auto play is not waiting: keep the corner empty. */
+	if (progress < 0.0f || label == NULL) return;
+
+	const float w = 76, h = 6, x = 232, y = 202;
+
+	C2D_DrawRectSolid(ui_x(x), y, 0, w, h, C2D_Color32(10, 26, 44, 200));
+
+	if (progress > 0.0f) {
+		float filled = (w - 2) * progress;
+		if (filled < 1) filled = 1;
+		C2D_DrawRectSolid(ui_x(x + 1), y + 1, 0, filled, h - 2,
+			voice ? COLOR_ACCENT : COLOR_WHITE);
+	}
+
+	/* Small label under the bar, right aligned. */
+	ui_text(label, x + w - (voice ? 25.0f : 21.0f), y + 15, 9,
+		voice ? COLOR_ACCENT : COLOR_MUTED, 26);
 }
 
 void cpymo_3ds_ui_draw_enhanced_background(void)
@@ -271,6 +311,8 @@ void cpymo_3ds_ui_draw_enhanced_hints(void)
 	if (keys[0]) snprintf(line, sizeof(line), "%s 继续 · SELECT 显示模式", keys);
 	else snprintf(line, sizeof(line), "SELECT 显示模式");
 	ui_text(line, 12, 235, 11, COLOR_WHITE, 250);
+
+	cpymo_3ds_ui_draw_progress();
 
 	cpymo_3ds_ui_draw_clock(320);
 }

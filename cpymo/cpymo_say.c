@@ -304,6 +304,17 @@ void cpymo_say_stop_auto_mode(cpymo_engine *e)
 	}
 }
 
+float cpymo_say_auto_mode_progress(const cpymo_engine *e)
+{
+	if (!e->say.auto_mode || e->say.auto_mode_timer < 0) return -1.0f;
+
+	float progress = 1.0f - e->say.auto_mode_timer / auto_mode_time;
+	if (progress < 0) progress = 0;
+	if (progress > 1) progress = 1;
+
+	return progress;
+}
+
 static bool cpymo_say_wait_text_reading(cpymo_engine *e, float dt)
 {
 	assert(e->say.textbox_usable);
