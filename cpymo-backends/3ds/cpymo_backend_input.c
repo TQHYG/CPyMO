@@ -30,7 +30,15 @@ const extern float ratio_wb, ratio_h;
  * running game (no UI on the stack) honours the player's custom bindings. */
 static bool using_default_mapping(void)
 {
-    return engine.ui != NULL || engine.assetloader.gamedir == NULL;
+    /* Custom bindings are only live on the in-game dialogue interface.
+     * Everything else keeps the classic mapping so that D-pad navigation,
+     * A = confirm and B = cancel always work: the selector, every menu, the
+     * backlog, save/load, the settings page and branch choices. */
+    if (engine.ui != NULL) return true;
+    if (engine.assetloader.gamedir == NULL) return true;
+    if (engine.select_img.selections != NULL) return true;
+    if (!engine.say.active) return true;
+    return false;
 }
 
 static void apply_default_mapping(cpymo_input *out, u32 keys)

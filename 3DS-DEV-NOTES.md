@@ -136,5 +136,16 @@ key_r=skip
   `cpymo_config_ui_enter`、`cpymo_rmenu_restart_game`）完成；`history` 复用引擎的 `up`，
   `menu` 复用 `cancel`，`next`→`ok`，`skip`→`skip`，`hide`→`hide_window`。
 - ZL/ZR 在 `settings_3ds.c` 的 `key_bits()` 里并入 L/R，不可单独绑定，UI 文案里也不出现。
-- 设置页面：选择器下屏右下角图标+文字，按 Y 或触摸进入；上下选择、左右改值、A 确认、
-  B 返回。改动立即写回 `settings.txt`。
+- 设置页面：选择器下屏右下角「Y 设置」（纯文字，可触摸），按 Y 或触摸进入；上下/触摸选择、
+  左右改值、A 确认、B 返回（点底部提示行也可返回）。上屏用视差层显示标题与当前值卡片。
+- **键位只在游戏对话界面生效**：`using_default_mapping()` 在以下情况回退到固定映射（方向键导航、
+  A 确认、B 取消）：选择器（`gamedir == NULL`）、任何 `engine.ui`（菜单/存读档/设置/历史）、
+  分支选项（`select_img.selections != NULL`）、以及非对话状态（`!say.active`）。
+
+## 自动播放与语音
+
+`cpymo_say_wait_process_auto_mode()`：
+- 本行有语音时不计时，等语音；语音结束后**立即下一句**（不再额外等 2 秒）。
+- 无语音时按 `auto_mode_time = 2.0s` 计时，SE 播放中（且非循环）也暂停计时。
+- 新增 `say.auto_mode_voice_seen`（运行时字段，不入存档），在 `cpymo_say_start()` 每行重置。
+- 进度条：有语音→voice 进度，否则自动等待→wait 进度；标签字号 12（与下屏提示同大）。

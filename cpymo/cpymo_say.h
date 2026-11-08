@@ -32,6 +32,9 @@ typedef struct {
 
 	bool auto_mode;
 	float auto_mode_timer;
+	/* A voice for the current line has been heard; advance as soon as it ends
+	 * instead of starting another wait. */
+	bool auto_mode_voice_seen;
 } cpymo_say;
 
 void cpymo_say_init(cpymo_say *);

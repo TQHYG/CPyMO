@@ -30,27 +30,12 @@ static float ui_x(float x)
 #define COLOR_HEADER C2D_Color32(22, 49, 76, 255)
 #define COLOR_SELECTED C2D_Color32(38, 91, 128, 255)
 
-/* Settings button in the bottom right corner of the launcher's bottom screen. */
-#define SETTINGS_BTN_X 244.0f
-#define SETTINGS_BTN_Y 194.0f
-#define SETTINGS_BTN_W 68.0f
-#define SETTINGS_BTN_H 38.0f
-
-static void settings_gear_icon(float x, float y, float size)
-{
-	const float c = size / 2.0f;
-
-	/* Six spokes around a ring: reads as a gear at this size. */
-	for (int i = 0; i < 6; ++i) {
-		const float t = (float)i * 3.14159265f / 3.0f;
-		const float tx = x + c + cosf(t) * c * 0.72f - c * 0.17f;
-		const float ty = y + c + sinf(t) * c * 0.72f - c * 0.17f;
-		C2D_DrawRectSolid(ui_x(tx), ty, 0, c * 0.34f, c * 0.34f, COLOR_ACCENT);
-	}
-
-	C2D_DrawCircleSolid(ui_x(x + c), y + c, 0, c * 0.60f, COLOR_ACCENT);
-	C2D_DrawCircleSolid(ui_x(x + c), y + c, 0, c * 0.24f, C2D_Color32(28, 62, 94, 255));
-}
+/* Settings button in the bottom right corner of the launcher's bottom screen.
+ * Text only ("Y 设置") but still tappable. */
+#define SETTINGS_BTN_X 248.0f
+#define SETTINGS_BTN_Y 214.0f
+#define SETTINGS_BTN_W 66.0f
+#define SETTINGS_BTN_H 22.0f
 
 static void ui_text(const char *text, float x, float y, float size, u32 color, float max_width)
 {
@@ -255,14 +240,10 @@ void cpymo_3ds_ui_draw_launcher(const cpymo_game_selector_item *selected)
 		ui_text("A 启动 · 上下选择", 12, 218, 12, COLOR_ACCENT, 190);
 		ui_text("START 退出 · SELECT 切换显示模式", 12, 234, 11, COLOR_MUTED, 232);
 
-		/* Settings entry: icon + text in the bottom right corner. */
+		/* Settings entry: text only, still tappable. */
 		C2D_DrawRectSolid(ui_x(SETTINGS_BTN_X), SETTINGS_BTN_Y, 0,
-			SETTINGS_BTN_W, SETTINGS_BTN_H, C2D_Color32(28, 62, 94, 255));
-		C2D_DrawRectSolid(ui_x(SETTINGS_BTN_X), SETTINGS_BTN_Y, 0,
-			2, SETTINGS_BTN_H, COLOR_ACCENT);
-		settings_gear_icon(SETTINGS_BTN_X + 9, SETTINGS_BTN_Y + 9, 17);
-		ui_text("设置", SETTINGS_BTN_X + 34, SETTINGS_BTN_Y + 25, 14, COLOR_WHITE, 32);
-		ui_text("Y", SETTINGS_BTN_X + 34, SETTINGS_BTN_Y + 11, 10, COLOR_ACCENT, 14);
+			SETTINGS_BTN_W, SETTINGS_BTN_H, C2D_Color32(24, 55, 84, 220));
+		ui_text("Y 设置", SETTINGS_BTN_X + 8, SETTINGS_BTN_Y + 16, 13, COLOR_WHITE, 56);
 	}
 	ui_layer = 0;
 }
@@ -314,7 +295,7 @@ void cpymo_3ds_ui_draw_progress(void)
 	/* Nothing is playing and auto play is not waiting: keep the corner empty. */
 	if (progress < 0.0f || label == NULL) return;
 
-	const float w = 76, h = 6, x = 232, y = 202;
+	const float w = 76, h = 6, x = 232, y = 194;
 
 	C2D_DrawRectSolid(ui_x(x), y, 0, w, h, C2D_Color32(10, 26, 44, 200));
 
@@ -325,9 +306,9 @@ void cpymo_3ds_ui_draw_progress(void)
 			voice ? COLOR_ACCENT : COLOR_WHITE);
 	}
 
-	/* Small label under the bar, right aligned. */
-	ui_text(label, x + w - (voice ? 25.0f : 21.0f), y + 15, 9,
-		voice ? COLOR_ACCENT : COLOR_MUTED, 26);
+	/* Small label under the bar, right aligned; same size as the hints. */
+	ui_text(label, x + w - (voice ? 32.0f : 26.0f), y + 18, 12,
+		voice ? COLOR_ACCENT : COLOR_MUTED, 34);
 }
 
 void cpymo_3ds_ui_draw_enhanced_background(void)
@@ -456,11 +437,77 @@ static void settings_change_key(int key, int dir)
 	cpymo_3ds_settings_save();
 }
 
+/* Touch support for the settings page. It is only drawn on the bottom screen,
+ * so raw touch coordinates map directly to the layout below. */
+static void settings_touch(void)
+{
+	touchPosition touch;
+	hidTouchRead(&touch);
+
+	const float x = (float)touch.px;
+	const float y = (float)touch.py;
+
+	/* Bottom hint line doubles as a "back" button. */
+	if (y >= 216) {
+		if (settings_state.page == settings_page_keys) {
+			settings_state.page = settings_page_root;
+			settings_state.cursor = SETTINGS_ROOT_ITEM_KEYS;
+		}
+		else settings_state.open = false;
+		return;
+	}
+
+	if (settings_state.page == settings_page_root) {
+		if (y < 41) return;
+
+		const int row = (int)((y - 41) / 33);
+		if (row < 0 || row >= SETTINGS_ROOT_ITEMS) return;
+		if (y - (41 + row * 33) > 29) return;
+
+		settings_state.cursor = row;
+
+		if (row <= 2) {
+			/* Left half decreases, right half increases */
+			settings_change_value(row, x < 160 ? -1 : 1);
+		}
+		else if (row == SETTINGS_ROOT_ITEM_KEYS) {
+			settings_state.page = settings_page_keys;
+			settings_state.cursor = 0;
+		}
+		else {
+			cpymo_3ds_settings_set_defaults(cpymo_3ds_settings_mutable());
+			cpymo_3ds_settings_save();
+		}
+
+		return;
+	}
+
+	/* Key binding page: two columns of five rows. Tap once to select, tap the
+	 * selected cell again to cycle its action. */
+	if (y < 40) return;
+
+	const int row = (int)((y - 40) / 34);
+	if (row < 0 || row > 4) return;
+	if (y - (40 + row * 34) > 30) return;
+
+	const int column = x < 162 ? 0 : 1;
+	if (column == 0 && (x < 10 || x > 158)) return;
+	if (column == 1 && (x < 166 || x > 314)) return;
+
+	const int key = column * 5 + row;
+	if (key >= cpymo_3ds_key_count) return;
+
+	if (settings_state.cursor == key) settings_change_key(key, 1);
+	else settings_state.cursor = key;
+}
+
 void cpymo_3ds_ui_settings_update(void)
 {
 	if (!settings_state.open) return;
 
 	const u32 pressed = hidKeysDown();
+
+	if (pressed & KEY_TOUCH) settings_touch();
 
 	if (settings_state.page == settings_page_root) {
 		if (pressed & KEY_UP)
@@ -508,29 +555,39 @@ void cpymo_3ds_ui_settings_update(void)
 
 static void settings_draw_top(void)
 {
-	ui_layer = -2.0f;
+	/* Background sits far behind, the explanatory lines just above it, while
+	 * the title and the key values float in front (3D parallax). */
+	ui_layer = -5.0f;
 	panel_background(400, 240);
-	ui_layer = 0;
-	C2D_DrawRectSolid(0, 0, 0, 400, 32, COLOR_HEADER);
-	ui_text("CPyMO for 3DS · 设置", 16, 23, 18, COLOR_WHITE, 320);
 
+	ui_layer = -1.5f;
 	ui_text("全局设置保存在 sdmc:/pymogames/settings.txt", 20, 62, 13, COLOR_MUTED, 364);
 	ui_text("游戏内设置过的项目（存档中的设置）优先，", 20, 86, 13, COLOR_MUTED, 364);
 	ui_text("这里的值只作为未设置时的默认值。", 20, 108, 13, COLOR_MUTED, 364);
 
+	ui_layer = 6.0f;
+	C2D_DrawRectSolid(ui_x(-8), 0, 0, 416, 32, COLOR_HEADER);
+	C2D_DrawRectSolid(ui_x(-8), 31, 0, 416, 1, C2D_Color32(55, 108, 139, 255));
+	ui_text("CPyMO for 3DS · 设置", 16, 23, 18, COLOR_WHITE, 320);
+
+	ui_layer = 3.0f;
+	C2D_DrawRectSolid(ui_x(12), 132, 0, 376, 80, C2D_Color32(10, 26, 44, 190));
+	C2D_DrawRectSolid(ui_x(12), 132, 0, 3, 80, COLOR_ACCENT);
+
 	char line[80];
-	settings_format_value(0, line, sizeof(line));
 	char text[128];
+
+	settings_format_value(0, line, sizeof(line));
 	snprintf(text, sizeof(text), "默认显示模式：%s", line);
-	ui_text(text, 20, 146, 14, COLOR_ACCENT, 364);
+	ui_text(text, 26, 156, 15, COLOR_ACCENT, 350);
 
 	settings_format_value(1, line, sizeof(line));
 	snprintf(text, sizeof(text), "默认字体大小：%s", line);
-	ui_text(text, 20, 170, 14, COLOR_ACCENT, 364);
+	ui_text(text, 26, 180, 15, COLOR_ACCENT, 350);
 
 	settings_format_value(2, line, sizeof(line));
 	snprintf(text, sizeof(text), "默认播放速度：%s", line);
-	ui_text(text, 20, 194, 14, COLOR_ACCENT, 364);
+	ui_text(text, 26, 204, 15, COLOR_ACCENT, 350);
 
 	cpymo_3ds_ui_draw_clock(400);
 }
@@ -576,7 +633,7 @@ void cpymo_3ds_ui_settings_draw(bool bottom_screen)
 			}
 		}
 
-		ui_text("上下选择 · 左右修改 · A 确认 · B 返回", 12, 232, 11, COLOR_MUTED, 296);
+		ui_text("上下/触摸选择 · 左右改值 · A 确认 · B 返回", 12, 232, 11, COLOR_MUTED, 296);
 	}
 	else {
 		ui_text("键位设置", 14, 23, 17, COLOR_WHITE, 200);
@@ -597,6 +654,6 @@ void cpymo_3ds_ui_settings_draw(bool bottom_screen)
 				selected ? COLOR_WHITE : COLOR_MUTED, 96);
 		}
 
-		ui_text("左右切换功能 · A 下一个 · B 返回", 12, 232, 11, COLOR_MUTED, 296);
+		ui_text("左右切换功能 · A 下一个 · 触摸选中/切换 · B 返回", 12, 232, 11, COLOR_MUTED, 296);
 	}
 }

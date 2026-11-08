@@ -60,6 +60,7 @@ void cpymo_say_init(cpymo_say *out)
 	out->current_say_is_already_read = true;
 	out->auto_mode = false;
 	out->auto_mode_timer = -1;
+	out->auto_mode_voice_seen = false;
 }
 
 void cpymo_say_free(cpymo_say *say)
@@ -275,19 +276,34 @@ static error_t cpymo_say_wait_text_fadein_callback(cpymo_engine *e);
 bool cpymo_say_wait_process_auto_mode(cpymo_engine *e, float dt, bool prev_wait_result)
 {
 	if (!e->say.auto_mode) return prev_wait_result;
-	
+
 	if (prev_wait_result) {
 		e->say.auto_mode = false;
 		e->say.auto_mode_timer = -1;
+		e->say.auto_mode_voice_seen = false;
 		return false;
 	}
 
 	if (e->say.auto_mode_timer < 0) e->say.auto_mode_timer = auto_mode_time;
-	
-	if (!cpymo_audio_channel_is_playing(CPYMO_AUDIO_CHANNEL_VO, &e->audio) &&
-		(!cpymo_audio_channel_is_playing(CPYMO_AUDIO_CHANNEL_SE, &e->audio) || 
-			cpymo_audio_channel_is_looping(CPYMO_AUDIO_CHANNEL_SE, &e->audio)) &&
-		!e->input.hide_window && !e->input.hide_window)
+
+	/* A voice is reading this line: wait for it, and do not run the timer. */
+	if (cpymo_audio_channel_is_playing(CPYMO_AUDIO_CHANNEL_VO, &e->audio)) {
+		e->say.auto_mode_voice_seen = true;
+		return false;
+	}
+
+	/* The voice just finished: advance immediately instead of waiting again.
+	 * (If the text animation is somehow still running, fall through to the
+	 * normal countdown so that auto play can never stall.) */
+	if (e->say.auto_mode_voice_seen && cpymo_textbox_all_finished(&e->say.textbox)) {
+		e->say.auto_mode_voice_seen = false;
+		e->say.auto_mode_timer = -1;
+		return true;
+	}
+
+	if ((!cpymo_audio_channel_is_playing(CPYMO_AUDIO_CHANNEL_SE, &e->audio) ||
+		cpymo_audio_channel_is_looping(CPYMO_AUDIO_CHANNEL_SE, &e->audio)) &&
+		!e->input.hide_window)
 		e->say.auto_mode_timer -= dt;
 
 	return e->say.auto_mode_timer < 0;
@@ -297,6 +313,7 @@ void cpymo_say_stop_auto_mode(cpymo_engine *e)
 {
 	e->say.auto_mode = false;
 	e->say.auto_mode_timer = -1;
+	e->say.auto_mode_voice_seen = false;
 	if (e->say.textbox_usable) {
 		e->say.textbox.timer = 0.0f;
 		e->say.textbox.draw_cursor = true;
@@ -521,6 +538,10 @@ error_t cpymo_say_start(cpymo_engine *e, cpymo_str name, cpymo_str text)
 	cpymo_engine_request_redraw(e);
 
 	e->say.active = true;
+
+	/* New line: restart the auto play wait and forget the previous voice. */
+	e->say.auto_mode_timer = -1;
+	e->say.auto_mode_voice_seen = false;
 
 	if (cpymo_engine_skipping(e)) {
 		cpymo_say_wait_text_read_callback(e);
