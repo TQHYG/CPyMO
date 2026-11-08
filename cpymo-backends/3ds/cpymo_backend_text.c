@@ -7,6 +7,11 @@
 
 static C2D_Font font;
 
+C2D_Font cpymo_backend_text_3ds_font(void)
+{
+    return font;
+}
+
 bool enhanced_3ds_display_mode_select(enum cpymo_backend_image_draw_type t);
 
 error_t cpymo_backend_text_sys_init()

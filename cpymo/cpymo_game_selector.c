@@ -125,8 +125,10 @@ static void cpymo_game_selector_item_load_info(cpymo_game_selector_item *item, f
 		error_t err = cpymo_gameconfig_parse_from_file(&game_config, path);
 		if (err != CPYMO_ERR_SUCC) FAIL;
 
+		strncpy(item->gametitle_text, game_config.gametitle, sizeof(item->gametitle_text) - 1);
+		item->gametitle_text[sizeof(item->gametitle_text) - 1] = '\0';
 #ifdef ENABLE_TEXT_EXTRACT
-        strcpy(item->gametitle_text, game_config.gametitle);
+        cpymo_backend_text_extract(item->gametitle_text);
 #endif
 		cpymo_backend_text_create(&item->gametitle, &item->gametitle_w,
 			cpymo_str_pure(game_config.gametitle), 
@@ -437,6 +439,7 @@ error_t cpymo_game_selector_item_create(cpymo_game_selector_item ** out, char **
 	*game_dir_move_in = NULL;
 	(*out)->icon = NULL;
 	(*out)->gametitle = NULL;
+	(*out)->gametitle_text[0] = '\0';
 	return CPYMO_ERR_SUCC;
 }
 

@@ -51,7 +51,7 @@ CFLAGS	:=	-O3 -Wall -Wno-unknown-pragmas -Ofast -mword-relocations \
 			-ffunction-sections \
 			$(ARCH)
 
-CFLAGS	+=	$(INCLUDE) -D__3DS__ -DNDEBUG
+CFLAGS	+=	$(INCLUDE) -D__3DS__ -DNDEBUG -DEXIT_TO_GAME_SELECTOR
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 

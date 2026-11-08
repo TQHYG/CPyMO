@@ -277,6 +277,21 @@ error_t cpymo_backend_image_load(
     return CPYMO_ERR_SUCC;
 }
 
+void cpymo_3ds_draw_image_raw(cpymo_backend_image src, float x, float y, float w, float h)
+{
+    if (!src) return;
+    cpymo_backend_image_3ds *img = (cpymo_backend_image_3ds *)src;
+    Tex3DS_SubTexture sub;
+    sub.width = (u16)(img->real_width * img->scale);
+    sub.height = (u16)(img->real_height * img->scale);
+    sub.left = 0;
+    sub.right = (float)sub.width / img->pad_width;
+    sub.top = 0;
+    sub.bottom = (float)sub.height / img->pad_height;
+    C2D_Image image = { &img->tex, &sub };
+    C2D_DrawImageAt(image, x, y, 0, NULL, w / sub.width, h / sub.height);
+}
+
 void cpymo_backend_image_free(cpymo_backend_image image)
 {
     C3D_TexDelete(&((cpymo_backend_image_3ds *)image)->tex);
